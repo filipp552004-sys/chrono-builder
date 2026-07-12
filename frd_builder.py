@@ -74,7 +74,7 @@ def build_frd(d):
 
     r+=2; bar(ws,r,"БАЛАНС ПО ВИДАМ ВРЕМЕНИ")
     r+=1
-    for c,t in zip((2,3,4),("Вид времени","Мин","% смены")):
+    for c,t in zip((2,3,4),("Вид времени","Мин","% дня")):
         cc=ws.cell(r,c,t); cc.font=Font(bold=True,size=10); cc.fill=PatternFill("solid",fgColor=SUB); cc.border=BORD; cc.alignment=Alignment(horizontal="center")
     tt_rows={}
     for code in ("PV","UV","LT","PR","EX"):
@@ -93,7 +93,7 @@ def build_frd(d):
 
     r+=2; bar(ws,r,"LEAN-СРЕЗ ПО ЦЕННОСТИ")
     r+=1
-    for c,t in zip((2,3,4),("Категория ценности","Мин","% смены")):
+    for c,t in zip((2,3,4),("Категория ценности","Мин","% дня")):
         cc=ws.cell(r,c,t); cc.font=Font(bold=True,size=10); cc.fill=PatternFill("solid",fgColor=SUB); cc.border=BORD; cc.alignment=Alignment(horizontal="center")
     for code in ("VA","BR","NVA"):
         r+=1
