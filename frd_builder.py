@@ -1,4 +1,9 @@
-"""Генератор клиентского Excel «Баланс рабочего времени» (ФРД / самофотография). v3.
+"""Генератор клиентского Excel «Баланс рабочего времени» (ФРД / самофотография). v3.2.
+v3.2 (19.09.2026): обед — служебный код OBED (методика 2.3). Строка обеда в наблюдательном листе
+  серая, «не входит в рабочее время»; в итог и баланс не входит (ч. 1 ст. 108 ТК РФ); отдельная
+  строка «Обеденный перерыв, мин»; код OBED в подсказке колонки K; строка в легенде.
+  Удлинение обеда сверх перерыва приходит из process-frd v2.3 отдельной строкой ПНД.
+v3.1: текстовые значения блока «Объект наблюдения» растянуты по ширине (не обрезаются).
 
 Методика 2.2: одиннадцать индексов затрат рабочего времени, причины потерь,
 фактический и проектируемый баланс, коэффициенты, справочные надбавки.
@@ -41,6 +46,10 @@ IDX_GROUP = {"PZ": "Работа", "OO": "Работа", "OV": "Работа", "
              "NR": "Потери", "SR": "Потери", "PNT": "Потери", "PND": "Потери"}
 IDX_COLOR = {"PZ": GREY, "OO": GREEN, "OV": "FF4B9B6F", "OBT": "FF5A7090", "OBO": "FF5A7090",
              "OTL": BLUE, "PT": BLUE, "NR": AMBER, "SR": AMBER, "PNT": RED, "PND": RED}
+# Служебный код «обед» (методика 2.3): в рабочее время не включается (ч. 1 ст. 108 ТК РФ),
+# в баланс не входит. Строк баланса по-прежнему одиннадцать (INDEXES).
+LUNCH = "OBED"
+IDX_RU[LUNCH] = "Обед"; IDX_LABEL[LUNCH] = "не входит в рабочее время"; IDX_COLOR[LUNCH] = "FF9A9A9A"
 LOSS = ["NR", "SR", "PNT", "PND"]
 NORM = ["PZ", "OO", "OV", "OBT", "OBO", "OTL", "PT"]
 REASON_RU = {"ORG": "Организационные", "TECH": "Технические", "INFO": "Информационные",
@@ -55,13 +64,20 @@ def bar(ws, row, text, fill=GREEN, size=11, span=6):
     c.fill = PatternFill("solid", fgColor=fill); c.alignment = Alignment(vertical="center"); ws.row_dimensions[row].height = 19
 
 
-def kv(ws, row, label, value, fill=None, bold=False, note="", fmt=None):
+def kv(ws, row, label, value, fill=None, bold=False, note="", fmt=None, wide_to=None):
+    """Пара «подпись — значение». wide_to=N: текстовое значение растягивается объединением C..N
+    и выравнивается влево — для длинных строк (должность, период, режим)."""
     b = ws.cell(row, 2, label); b.font = Font(size=10, bold=bold)
-    v = ws.cell(row, 3, value); v.font = Font(size=10, bold=bold); v.alignment = Alignment(horizontal="center")
+    v = ws.cell(row, 3, value); v.font = Font(size=10, bold=bold)
+    if wide_to:
+        ws.merge_cells(start_row=row, start_column=3, end_row=row, end_column=wide_to)
+        v.alignment = Alignment(horizontal="left", wrap_text=True, vertical="center")
+    else:
+        v.alignment = Alignment(horizontal="center")
     if fmt: v.number_format = fmt
     if fill:
         f = PatternFill("solid", fgColor=fill); b.fill = f; v.fill = f
-    if note:
+    if note and not wide_to:
         n = ws.cell(row, 4, note); n.font = Font(size=9, italic=True, color=GREY)
         ws.merge_cells(start_row=row, start_column=4, end_row=row, end_column=6)
     return v
@@ -99,7 +115,7 @@ def build_frd(d):
     for col, w in zip("BCDEFGHIJ", [7, 12, 9, 9, 10, 46, 30, 22, 11]): lst.column_dimensions[col].width = w
     lst.cell(1, 1, "НАБЛЮДАТЕЛЬНЫЙ ЛИСТ · самофотография рабочего дня"); lst.merge_cells("A1:J1")
     lst.cell(1, 1).font = Font(bold=True, color=WHITE, size=12); lst.cell(1, 1).fill = PatternFill("solid", fgColor=GREEN); lst.row_dimensions[1].height = 22
-    lst.cell(2, 1, f"Дней наблюдения: {days} · Записей: {len(recs)} · Индекс можно исправить в колонке K (латиницей: PZ, OO, OV, OBT, OBO, OTL, PT, NR, SR, PNT, PND) — баланс пересчитается").font = Font(size=9, italic=True, color=GREY)
+    lst.cell(2, 1, f"Дней наблюдения: {days} · Записей: {len(recs)} · Индекс можно исправить в колонке K (латиницей: PZ, OO, OV, OBT, OBO, OTL, PT, NR, SR, PNT, PND; OBED — обед, в баланс не входит) — баланс пересчитается").font = Font(size=9, italic=True, color=GREY)
     lst.merge_cells("A2:J2")
     hdr(lst, 3, range(1, 11), ["№", "День", "Дата", "Начало", "Оконч.", "Мин", "Действие", "Индекс затрат", "Причина потери", "Проверить"])
     lst.cell(3, 11, "Код"); lst.cell(3, 11).font = Font(bold=True, size=9, color=GREY)
@@ -118,6 +134,8 @@ def build_frd(d):
         for c in range(1, 11):
             lst.cell(r, c).border = BORD
             if c not in (8, 9, 10): lst.cell(r, c).font = Font(size=10)
+        if idx == LUNCH:   # обед — серым: в рабочее время не входит
+            for c in (1, 2, 3, 4, 5, 6, 7): lst.cell(r, c).font = Font(size=10, color=GREY, italic=True)
         r += 1
     last = max(r - 1, 4); first = 4
     dur = f"'{LST}'!$F${first}:$F${last}"; idxc = f"'{LST}'!$K${first}:$K${last}"
@@ -129,17 +147,18 @@ def build_frd(d):
     ws.cell(1, 1, "БАЛАНС РАБОЧЕГО ВРЕМЕНИ · фотография рабочего дня (самофотография)"); ws.merge_cells("A1:G1")
     ws.cell(1, 1).font = Font(bold=True, color=WHITE, size=13); ws.cell(1, 1).fill = PatternFill("solid", fgColor=GREEN); ws.row_dimensions[1].height = 26
     r = 3; bar(ws, r, "ОБЪЕКТ НАБЛЮДЕНИЯ", span=7)
-    r += 1; kv(ws, r, "Должность", d.get("position", ""))
-    r += 1; kv(ws, r, "Структурное подразделение", d.get("department", ""))
-    r += 1; kv(ws, r, "Отрасль", d.get("industry", ""))
-    r += 1; kv(ws, r, "Руководитель", d.get("supervisor", ""))
-    r += 1; kv(ws, r, "Период наблюдения", d.get("period", ""))
-    r += 1; kv(ws, r, "Режим", f"{d.get('schedule_type', 'рабочий день')} {d.get('work_start', '')} – {d.get('work_end', '')}, обед {int(_f(d.get('lunch_minutes', 0)))} мин")
-    r += 1; kv(ws, r, "Метод", "самофотография — записи вёл работник" + (" по поручению заказчика" if delegated else ""))
+    r += 1; kv(ws, r, "Должность", d.get("position", ""), wide_to=7)
+    r += 1; kv(ws, r, "Структурное подразделение", d.get("department", ""), wide_to=7)
+    r += 1; kv(ws, r, "Отрасль", d.get("industry", ""), wide_to=7)
+    r += 1; kv(ws, r, "Руководитель", d.get("supervisor", ""), wide_to=7)
+    r += 1; kv(ws, r, "Период наблюдения", d.get("period", ""), wide_to=7)
+    r += 1; kv(ws, r, "Режим", f"{d.get('schedule_type', 'рабочий день')} {d.get('work_start', '')} – {d.get('work_end', '')}, обед {int(_f(d.get('lunch_minutes', 0)))} мин", wide_to=7)
+    r += 1; kv(ws, r, "Метод", "самофотография — записи вёл работник" + (" по поручению заказчика" if delegated else ""), wide_to=7)
     r += 1; days_row = r; kv(ws, r, "Дней наблюдения", days, fill=SUB)
-    r += 1; tot_row = r; kv(ws, r, "Наблюдаемое время всего, мин", f"=SUM({dur})", bold=True, fill=SUB, fmt="0")
+    r += 1; tot_row = r; kv(ws, r, "Наблюдаемое рабочее время, мин (без обеда)", f'=SUM({dur})-SUMIF({idxc},"{LUNCH}",{dur})', bold=True, fill=SUB, fmt="0")
     TOT = f"$C${tot_row}"; DAYS = f"$C${days_row}"
     r += 1; kv(ws, r, "В среднем в день, мин", f"=IF({DAYS}=0,0,{TOT}/{DAYS})", fill=SUB, fmt="0.0")
+    r += 1; kv(ws, r, "Обеденный перерыв, мин (в рабочее время не входит)", f'=SUMIF({idxc},"{LUNCH}",{dur})', fmt="0")
 
     r += 2; bar(ws, r, "БАЛАНС ПО ИНДЕКСАМ ЗАТРАТ · факт и проект", span=7)
     r += 1; hdr(ws, r, (2, 3, 4, 5, 6, 7), ("Индекс затрат рабочего времени", "Факт, мин", "Факт, %", "Проект, мин", "Проект, %", "Группа"))
@@ -254,6 +273,8 @@ def build_frd(d):
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7); ws.cell(r, 2).font = Font(size=9, color=GREY); ws.cell(r, 2).alignment = Alignment(wrap_text=True, vertical="center"); ws.row_dimensions[r].height = 30
     r += 1; ws.cell(r, 2, "Регламентированные перерывы: ОТЛ — отдых и личные надобности · ПТ — перерывы по технологии. Потери: НР — непроизводительная работа · СР — случайная работа · ПНТ — организационно-технические · ПНД — по вине работника")
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7); ws.cell(r, 2).font = Font(size=9, color=GREY); ws.cell(r, 2).alignment = Alignment(wrap_text=True, vertical="center"); ws.row_dimensions[r].height = 30
+    r += 1; ws.cell(r, 2, "Обед — перерыв для отдыха и питания: в рабочее время не включается (ч. 1 ст. 108 ТК РФ) и в баланс не входит. Удлинение обеда сверх установленного перерыва учитывается как ПНД и помечается для проверки.")
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7); ws.cell(r, 2).font = Font(size=9, color=GREY); ws.cell(r, 2).alignment = Alignment(wrap_text=True, vertical="center"); ws.row_dimensions[r].height = 30
 
     for s in (ws, ind, rsn, lst):
         for rowc in s.iter_rows():
@@ -276,17 +297,19 @@ if __name__ == "__main__":
                  {"day_number": 1, "obs_date": "01.09.2026", "start": "08:45", "end": "10:00", "duration": 75, "activity": "Оформление приказов о приёме", "wt_index": "OO", "loss_reason": None, "needs_review": False},
                  {"day_number": 1, "obs_date": "01.09.2026", "start": "10:00", "end": "10:20", "duration": 20, "activity": "Ожидание согласования у руководителя", "wt_index": "PNT", "loss_reason": "ORG", "needs_review": False},
                  {"day_number": 1, "obs_date": "01.09.2026", "start": "10:20", "end": "10:30", "duration": 10, "activity": "Перекур", "wt_index": "OTL", "loss_reason": None, "needs_review": False},
+                 {"day_number": 1, "obs_date": "01.09.2026", "start": "12:00", "end": "13:00", "duration": 60, "activity": "Обед", "wt_index": "OBED", "loss_reason": None, "needs_review": False},
+                 {"day_number": 1, "obs_date": "01.09.2026", "start": "13:00", "end": "13:10", "duration": 10, "activity": "Обед — сверх установленного перерыва 60 мин", "wt_index": "PND", "loss_reason": "DISC", "needs_review": True},
                  {"day_number": 2, "obs_date": "02.09.2026", "start": "08:30", "end": "09:30", "duration": 60, "activity": "Поиск личного дела в архиве", "wt_index": "NR", "loss_reason": "INFO", "needs_review": True},
                  {"day_number": 2, "obs_date": "02.09.2026", "start": "09:30", "end": "10:30", "duration": 60, "activity": "Ввод данных в 1С", "wt_index": "OO", "loss_reason": None, "needs_review": False},
              ],
-             "balance": {"byIndex": {"PZ": 15, "OO": 135, "OV": 0, "OBT": 0, "OBO": 0, "OTL": 10, "PT": 0, "NR": 60, "SR": 0, "PNT": 20, "PND": 0},
-                         "projected": {"PZ": 15, "OO": 215, "OV": 0, "OBT": 0, "OBO": 0, "OTL": 10, "PT": 0, "NR": 0, "SR": 0, "PNT": 0, "PND": 0},
-                         "total": 240, "perDay": 120, "operative": 135, "servicing": 0, "normirovannoe": 160, "losses": 80,
-                         "lossesByReason": {"ORG": 20, "TECH": 0, "INFO": 60, "DISC": 0, "EXT": 0},
-                         "kisp": 66.7, "kpnt": 8.3, "kpnd": 0, "knr": 25, "checksum": 100, "ppt": 59.3,
-                         "pptFormula": "ППТ = (Тпнт + Тпнд + Тнр + Тср) / Топ × 100 = 80 / 135 × 100 = 59.3 %",
-                         "dKisp": 49.9, "reservePerDay": 40, "aob": 0, "aotl": 7.4, "tpzPerDay": 7.5,
+             "balance": {"byIndex": {"PZ": 15, "OO": 135, "OV": 0, "OBT": 0, "OBO": 0, "OTL": 10, "PT": 0, "NR": 60, "SR": 0, "PNT": 20, "PND": 10},
+                         "projected": {"PZ": 15, "OO": 225, "OV": 0, "OBT": 0, "OBO": 0, "OTL": 10, "PT": 0, "NR": 0, "SR": 0, "PNT": 0, "PND": 0},
+                         "total": 250, "lunch": 60, "perDay": 125, "operative": 135, "servicing": 0, "normirovannoe": 160, "losses": 90,
+                         "lossesByReason": {"ORG": 20, "TECH": 0, "INFO": 60, "DISC": 10, "EXT": 0},
+                         "kisp": 64.0, "kpnt": 8.0, "kpnd": 4.0, "knr": 24.0, "checksum": 100, "ppt": 66.7,
+                         "pptFormula": "ППТ = (Тпнт + Тпнд + Тнр + Тср) / Топ × 100 = 90 / 135 × 100 = 66.7 %",
+                         "dKisp": 56.3, "reservePerDay": 45, "aob": 0, "aotl": 7.4, "tpzPerDay": 7.5,
                          "warnings": ["Резерв свыше 50 % обычно указывает либо на серьёзные организационные проблемы, либо на неполноту записей наблюдения; требуется повторное наблюдение"]}}
     wb = build_frd(d); buf = io.BytesIO(); wb.save(buf)
-    out = sys.argv[2] if len(sys.argv) > 2 else "/tmp/FRD_BALANCE_v3_sample.xlsx"
+    out = sys.argv[2] if len(sys.argv) > 2 else "/tmp/FRD_BALANCE_v3_2_sample.xlsx"
     wb.save(out); print("OK", len(buf.getvalue()), "bytes |", wb.sheetnames, "→", out)
