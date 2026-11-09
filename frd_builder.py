@@ -1,4 +1,6 @@
-"""Генератор клиентского Excel «Баланс рабочего времени» (ФРД / самофотография). v3.3.
+"""Генератор клиентского Excel «Баланс рабочего времени» (ФРД / самофотография). v3.4.
+v3.4 (09.11.2026): «рабочий день» вместо «смены» для офисного режима; строка ΔКисп убрана
+  (непонятна клиенту; синхронно с process-frd v3.5 и записка v5).
 v3.3 (22.09.2026): покрытие смены в шапке — плановое время смены, доля закрытого
   наблюдением, сколько минут не закрыто. Поля payload: plan_minutes_per_day, coverage_pct
   (process-frd v3.1). Если режим не задан, строки не печатаются.
@@ -163,12 +165,14 @@ def build_frd(d):
     r += 1; kv(ws, r, "В среднем в день, мин", f"=IF({DAYS}=0,0,{TOT}/{DAYS})", fill=SUB, fmt="0.0")
     r += 1; kv(ws, r, "Обеденный перерыв, мин (в рабочее время не входит)", f'=SUMIF({idxc},"{LUNCH}",{dur})', fmt="0")
     plan_day = round(_f(d.get("plan_minutes_per_day", 0)))
+    unit_nom = "смена" if str(d.get("schedule_type", "")).strip() == "смена" else "рабочий день"
+    unit_gen = "смены" if unit_nom == "смена" else "рабочего дня"
     if plan_day > 0:
         r += 1; plan_row = r
-        kv(ws, r, "Плановое время смены, мин/день", plan_day, fill=SUB, fmt="0")
+        kv(ws, r, f"Плановое время {unit_gen}, мин/день", plan_day, fill=SUB, fmt="0")
         r += 1; kv(ws, r, "Закрыто наблюдением, % планового времени",
                    f"=IF($C${plan_row}*{DAYS}=0,0,{TOT}/($C${plan_row}*{DAYS}))", fill=SUB, fmt="0.0%",
-                   note="ниже 90 % — смена расписана не полностью, выводы ограничены")
+                   note=f"ниже 90 % — {unit_nom} расписан{'а' if unit_nom == 'смена' else ''} не полностью, выводы ограничены")
         r += 1; kv(ws, r, "Не закрыто наблюдением, мин", f"=MAX(0,$C${plan_row}*{DAYS}-{TOT})", fmt="0")
 
     r += 2; bar(ws, r, "БАЛАНС ПО ИНДЕКСАМ ЗАТРАТ · факт и проект", span=7)
@@ -221,7 +225,6 @@ def build_frd(d):
     r += 2; bar(ind, r, "РЕЗЕРВ РОСТА ПРОИЗВОДИТЕЛЬНОСТИ", span=6)
     r += 1; kv(ind, r, "ППТ — возможный рост производительности труда", f"=IF({B}{OPc}=0,0,{B}{LOSSc}/{B}{OPc})", bold=True, fill=RESULT, fmt="0.0%", note="(Тпнт + Тпнд + Тнр + Тср) / Топ")
     r += 1; ind.cell(r, 2, bal.get("pptFormula", "")).font = Font(size=9, italic=True, color=GREY); ind.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
-    r += 1; kv(ind, r, "ΔКисп — прирост коэффициента использования (справочно)", f"=IF(C{kisp_row}=0,0,(1-C{kisp_row})/C{kisp_row})", fmt="0.0%", note="(1 − Кисп) / Кисп")
     r += 1; kv(ind, r, "Резерв рабочего времени, мин/день", f"=IF({B}{DAYS}=0,0,{B}{LOSSc}/{B}{DAYS})", bold=True, fill=RESULT, fmt="0.0")
 
     r += 2; bar(ind, r, "СПРАВОЧНЫЕ ВЕЛИЧИНЫ ДЛЯ НОРМИРОВАНИЯ (по данным наблюдения)", span=6)

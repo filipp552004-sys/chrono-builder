@@ -1,4 +1,8 @@
-"""Генератор карты хронометража (Excel с живыми формулами). Версия v5 — согласована."""
+"""Генератор карты хронометража (Excel с живыми формулами). Версия v6.
+v6 (09.11.2026): пустые поля не печатаются как «None» (наблюдатель, единица работ, «на 1 None»);
+  строка «Устойчивость рядов» под Топ — если есть неустойчивый ряд, норма помечается предварительной;
+  при нулевых надбавках — предупреждение «Тшт = Топ»; пустой источник надбавок — «не указан — проверить».
+v5 — согласована."""
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.workbook.properties import CalcProperties
@@ -28,8 +32,21 @@ def kv(ws,row,label,value,note="",fill=None,bold=False,merge_val=False):
     if note and not merge_val: ws.cell(row,4,note).font=Font(size=9,italic=True,color="FF7A7A7A")
     return v
 
+def _s(v, default=""):
+    """Текст для ячейки: None и «None» → пусто (или значение по умолчанию)."""
+    if v is None: return default
+    t = str(v).strip()
+    return default if t in ("", "None", "null") else t
+
+def _n(v):
+    """Число для ячейки ввода: None/пусто → None (ячейка пустая), иначе число."""
+    try:
+        return None if v is None or str(v).strip() in ("", "None", "null") else float(v)
+    except (TypeError, ValueError):
+        return None
+
 def build(d):
-    wt=d.get("work_type","manual"); kun=KU_NORM.get(wt,2.0)
+    wt=d.get("work_type","manual"); kun=KU_NORM.get(wt,2.0); kun_s=str(kun).replace(".",",")
     wb=openpyxl.Workbook()
     ws=wb.active; ws.title="Норма времени"
     dz=wb.create_sheet("Детализация"); mt=wb.create_sheet("Методика")
@@ -44,7 +61,7 @@ def build(d):
     dz.cell(2,1).font=Font(size=9,italic=True,color="FF7A7A7A"); dz.merge_cells("A2:E2")
     r=4; refs=[]
     for ei,el in enumerate(d.get("elements",[]),1):
-        bar(dz,r,f"Операция {ei}. {el.get('name','')}",fill=ELEM,size=10); r+=1
+        bar(dz,r,f"Операция {ei}. {_s(el.get('name'))}",fill=ELEM,size=10); r+=1
         dz.cell(r,1,"№"); dz.cell(r,2,"Длительность, мин"); dz.cell(r,3,"Учтён (1)/искл. (0)"); dz.cell(r,4,"Учтённая, мин")
         for c in (1,2,3,4):
             cc=dz.cell(r,c); cc.font=Font(bold=True,size=9); cc.fill=PatternFill("solid",fgColor=SUB); cc.alignment=Alignment(horizontal="center",wrap_text=True); cc.border=BORD
@@ -60,20 +77,20 @@ def build(d):
         r+=1; c_avg=r; kv(dz,r,"→ Тср операции (среднее по принятым), мин",f"=IF(COUNT({acc})=0,0,AVERAGE({acc}))",bold=True,fill=SUB)
         r+=1; c_ku=r; kv(dz,r,"→ Ку = Тмакс/Тмин",f'=IF(COUNT({acc})=0,"",MAX({acc})/MIN({acc}))')
         r+=1; kv(dz,r,"→ Устойчивость ряда",f'=IF(COUNT({acc})=0,"нет замеров",IF(MAX({acc})/MIN({acc})<={kun},"устойчив","неустойчив — исключите выбросы/добавьте замеры"))')
-        r+=2; refs.append((el.get("name",""),c_avg,c_ku))
+        r+=2; refs.append((_s(el.get("name")),c_avg,c_ku))
 
     # ── НОРМА ВРЕМЕНИ ──
     ws.cell(1,1,"НОРМА ВРЕМЕНИ · метод хронометража"); ws.merge_cells("A1:E1")
     ws.cell(1,1).font=Font(bold=True,color=WHITE,size=13); ws.cell(1,1).fill=PatternFill("solid",fgColor=GREEN); ws.row_dimensions[1].height=26
     ws.cell(3,2,"НОРМА ВРЕМЕНИ НА:"); ws.cell(3,2).font=Font(bold=True,size=11)
-    ws.merge_cells("C3:E3"); nm=ws.cell(3,3,d.get("operation_name","")); nm.font=Font(bold=True,size=12); nm.fill=PatternFill("solid",fgColor=RESULT); ws.row_dimensions[3].height=22
+    ws.merge_cells("C3:E3"); nm=ws.cell(3,3,_s(d.get("operation_name"))); nm.font=Font(bold=True,size=12); nm.fill=PatternFill("solid",fgColor=RESULT); ws.row_dimensions[3].height=22
     ws.cell(4,2,"вид работ / направление, на которое устанавливается норматив").font=Font(size=8.5,italic=True,color="FF7A7A7A")
     r=6; bar(ws,r,"ИСХОДНЫЕ ДАННЫЕ")
-    r+=1; kv(ws,r,"Должность / профессия",d.get("position_name",""),merge_val=True)
-    r+=1; kv(ws,r,"Подразделение",d.get("department_name",""),merge_val=True)
-    r+=1; kv(ws,r,"Единица объёма работ",d.get("unit_of_work",""),merge_val=True)
-    r+=1; kv(ws,r,"Тип работы",KU_LABEL.get(wt,wt),f"норматив устойчивости Ку ≤ {kun}")
-    r+=1; kv(ws,r,"Наблюдатель / дата",f"{d.get('observer_name','')} · {d.get('obs_date','')}",merge_val=True)
+    r+=1; kv(ws,r,"Должность / профессия",_s(d.get("position_name")),merge_val=True)
+    r+=1; kv(ws,r,"Подразделение",_s(d.get("department_name")),merge_val=True)
+    r+=1; kv(ws,r,"Единица объёма работ",_s(d.get("unit_of_work"),"ед."),merge_val=True)
+    r+=1; kv(ws,r,"Тип работы",KU_LABEL.get(wt,wt),f"норматив устойчивости Ку ≤ {kun_s}")
+    r+=1; kv(ws,r,"Наблюдатель / дата"," · ".join(x for x in (_s(d.get("observer_name")),_s(d.get("obs_date"))) if x) or "не указаны",merge_val=True)
 
     r+=2; bar(ws,r,"ИЗ ЧЕГО СОСТОИТ НОРМА")
     r+=1
@@ -91,19 +108,25 @@ def build(d):
     ws.cell(r,2,"Топ — оперативное время = сумма операций, мин").font=Font(bold=True,size=10.5)
     ws.cell(r,3,f"=SUM(C{sf}:C{sl})").font=Font(bold=True,size=10.5); ws.cell(r,3).alignment=Alignment(horizontal="center")
     for c in (1,2,3,4): ws.cell(r,c).fill=PatternFill("solid",fgColor=SUB); ws.cell(r,c).border=BORD
+    r+=1
+    ws.cell(r,2,"Устойчивость хронометражных рядов").font=Font(bold=True,size=10)
+    ws.merge_cells(start_row=r,start_column=3,end_row=r,end_column=5)
+    ws.cell(r,3,f'=IF(SUMPRODUCT(--(D{sf}:D{sl}>{kun}))=0,"все ряды устойчивы (Ку ≤ {kun_s}) — норма технически обоснована","есть неустойчивые ряды (Ку > {kun_s}) — норма ПРЕДВАРИТЕЛЬНАЯ, нужен повторный хронометраж")')
+    ws.cell(r,3).font=Font(bold=True,size=10,color="FF9C2B2B"); ws.cell(r,3).alignment=Alignment(horizontal="left",wrap_text=True); ws.row_dimensions[r].height=30
 
     r+=2; bar(ws,r,"РАСЧЁТ НОРМЫ")
-    r+=1; c_aob=r; kv(ws,r,"аоб — обслуживание раб. места, %",d.get("servicing_percent",0),AOB_NOTE,fill=YELLOW)
-    r+=1; c_aotl=r; kv(ws,r,"аотл — отдых и личные надобности, %",d.get("rest_percent",0),AOTL_NOTE,fill=YELLOW)
+    r+=1; c_aob=r; kv(ws,r,"аоб — обслуживание раб. места, %",_n(d.get("servicing_percent")) or 0,AOB_NOTE,fill=YELLOW)
+    r+=1; c_aotl=r; kv(ws,r,"аотл — отдых и личные надобности, %",_n(d.get("rest_percent")) or 0,AOTL_NOTE,fill=YELLOW)
     r+=1; c_tsht=r; kv(ws,r,"Тшт = Топ × (1+(аоб+аотл)/100), мин",f"=C{c_top}*(1+(C{c_aob}+C{c_aotl})/100)",bold=True)
-    r+=1; c_tpz=r; kv(ws,r,"Тпз — подготовит.-заключит. на партию, мин",d.get("prep_final_minutes",0),"из ваших нормативов; 0 — если не применяется",fill=YELLOW)
-    r+=1; c_n=r; kv(ws,r,"n — размер партии",d.get("batch_size",""),"пусто — для непрерывных/единичных работ",fill=YELLOW)
+    ws.cell(r,4,f'=IF(C{c_aob}+C{c_aotl}=0,"надбавки не заданы: Тшт = Топ — дополните по нормативам","")').font=Font(size=9,italic=True,color="FF9C2B2B")
+    r+=1; c_tpz=r; kv(ws,r,"Тпз — подготовит.-заключит. на партию, мин",_n(d.get("prep_final_minutes")) or 0,"из ваших нормативов; 0 — если не применяется",fill=YELLOW)
+    r+=1; c_n=r; kv(ws,r,"n — размер партии",_n(d.get("batch_size")),"пусто — для непрерывных/единичных работ",fill=YELLOW)
     r+=1; c_tk=r; kv(ws,r,"Тшт-к = Тшт + Тпз/n, мин",f'=IF(OR(C{c_n}="",C{c_n}=0),C{c_tsht},C{c_tsht}+C{c_tpz}/C{c_n})',bold=True)
     r+=1
-    ws.cell(r,2,"ИТОГОВАЯ НОРМА ВРЕМЕНИ, мин"); ws.cell(r,3,f"=C{c_tk}"); ws.cell(r,4,f"на 1 {d.get('unit_of_work','ед.')}")
+    ws.cell(r,2,"ИТОГОВАЯ НОРМА ВРЕМЕНИ, мин"); ws.cell(r,3,f"=C{c_tk}"); ws.cell(r,4,f"на 1 {_s(d.get('unit_of_work'),'ед.')}")
     for c in (1,2,3,4): ws.cell(r,c).fill=PatternFill("solid",fgColor=RESULT); ws.cell(r,c).font=Font(bold=True,size=11.5)
     ws.cell(r,3).alignment=Alignment(horizontal="center"); ws.row_dimensions[r].height=20
-    r+=1; kv(ws,r,"Источник надбавок",d.get("norms_source",""),merge_val=True)
+    r+=1; kv(ws,r,"Источник надбавок",_s(d.get("norms_source"),"не указан — проверить"),merge_val=True)
 
     # ── МЕТОДИКА ──
     mt.column_dimensions["A"].width=3; mt.column_dimensions["B"].width=15; mt.column_dimensions["C"].width=70; mt.column_dimensions["D"].width=40

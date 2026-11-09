@@ -22,7 +22,7 @@ def _xlsx_response(wb, name):
 
 @app.get("/health")
 def health():
-    return jsonify(status="ok", service="chrono-builder")
+    return jsonify(status="ok", service="chrono-builder", version="2026-11-09: builder v6, frd v3.4")
 
 @app.post("/build")
 def build_endpoint():
